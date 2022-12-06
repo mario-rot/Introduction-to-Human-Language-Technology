@@ -45,6 +45,7 @@ class text_processing():
         return len(self.data)
 
     def clean_data(self, data = False, auto = True, lowercase = False, stopwords = False, minwords_len = False, signs = False):
+        self.cleaned_data = []
         c_data = self.data if not data else data
         if auto:
             lowercase = True
@@ -71,27 +72,38 @@ class text_processing():
         return sentence
 
     def tokenize_data(self, data = False):
+        self.tokenized_data = []
         t_data = self.data if not data else data
         for element in t_data:
             self.tokenized_data.append(nltk.word_tokenize(element))
         return self.tokenized_data
 
-    def frequency(self, Global = False):
-        if self.cleaned_data == []:
-            print('\n -- Data hasn\'t been cleaned, to calculate the frequency the data is going to be cleaned with the default parameters --\n')
-            self.clean_data() 
+    def frequency(self, Global = False, type_data = 'cleaned'):
+        if type_data == 'cleaned':
+            if self.cleaned_data == []:
+                print('\n -- Data hasn\'t been cleaned, to calculate frequency, the data is going to be cleaned with the default parameters --\n')
+                self.clean_data()
+            f_data = self.cleaned_data
+        elif type_data == 'tokenized':
+            if self.tokenized_data == []:
+                print('\n -- Data hasn\'t been tokenized, to calculate frequency, the data is going to be tokenized --\n')
+                self.tokenize_data()
+            f_data = self.tokenized_data
         if not Global:
             frequency = []
-            for element in self.cleaned_data:
+            for element in f_data:
                 frequency.append(pd.Series({k:v for k,v in collections.Counter(element).most_common()}))
             return frequency
         else: 
-            t_data = [element for sublist in self.cleaned_data for element in sublist]
+            t_data = [element for sublist in f_data for element in sublist]
             frequency = pd.Series({k:v for k,v in collections.Counter(t_data).most_common()})
             return frequency
 
-    def lemmatize_data(self, type_data = 'cleaned'):
-        if type_data == 'cleaned':
+    def lemmatize_data(self, type_data = 'cleaned', data = False, r_pos_tag = False):
+        self.lemmatized_data = []
+        if data:
+            l_data = data
+        elif type_data == 'cleaned':
             if self.cleaned_data == []:
                 print('\n -- Data hasn\'t been cleaned, to lemmatize the data is going to be cleaned with the default parameters --\n')
                 self.clean_data()
@@ -102,7 +114,7 @@ class text_processing():
                 self.tokenize_data()
             l_data = self.tokenized_data
         for element in l_data:
-            self.lemmatized_data.append(self.lemmatize_sentence(element))
+            self.lemmatized_data.append(self.lemmatize_sentence(element, r_pos_tag=r_pos_tag))
         return self.lemmatized_data
 
     def lemmatize_sentence(self,sentence, cleaned = True, r_pos_tag = False):
@@ -113,35 +125,41 @@ class text_processing():
             return [[self.lemmatize(self, pair), pair[1]] for pair in tagged]
         return[self.lemmatize(self, pair) for pair in tagged]
 
-    def mc_lemmatize_data(self, type_data = 'cleaned'):
-        if type_data == 'cleaned':
+    def mc_lemmatize_data(self, type_data = 'cleaned', data = False, lemma = False):
+        self.most_common_lemmatized_data = []
+        if data:
+            l_data = data
+        elif type_data == 'cleaned':
             if self.cleaned_data == []:
-                print('\n -- Data hasn\'t been cleaned, to apply lesk to data is going to be cleaned with the default parameters --\n')
+                print('\n -- Data hasn\'t been cleaned, to apply most_common_lemma to data is going to be cleaned with the default parameters --\n')
                 self.clean_data()
             l_data = self.cleaned_data
         elif type_data == 'tokenized':
             if self.tokenized_data == []:
-                print('\n -- Data hasn\'t been tokenized, to apply lesk to data is going to be tokenized --\n')
+                print('\n -- Data hasn\'t been tokenized, to apply most_common_lemma to data is going to be tokenized --\n')
                 self.tokenize_data()
             l_data = self.tokenized_data
         for element in l_data:
-            self.most_common_lemmatized_data.append(self.most_common_lemma_sentece(element))
+            self.most_common_lemmatized_data.append(self.most_common_lemma_sentece(element, lemma = lemma))
         return self.most_common_lemmatized_data
     
-    def most_common_lemma_sentece(self,sentence, cleaned = True):
+    def most_common_lemma_sentece(self,sentence, cleaned = True, lemma = False):
         if not cleaned:
             sentence = self.clean_data([sentence])[0]
-        return[self.get_most_common_lemma(self, word) for word in nltk.pos_tag(sentence)]
+        return[self.get_most_common_lemma(self, word, lemma) for word in nltk.pos_tag(sentence)]
 
-    def apply_lesk_data(self, type_data = 'cleaned', all = False):
-        if type_data == 'cleaned':
+    def apply_lesk_data(self, type_data = 'cleaned', all = False, data = False):
+        self.lesk_data = []
+        if data:
+            ls_data = data
+        elif type_data == 'cleaned':
             if self.cleaned_data == []:
-                print('\n -- Data hasn\'t been cleaned, to lemmatize the data is going to be cleaned with the default parameters --\n')
+                print('\n -- Data hasn\'t been cleaned, to apply lest to data is going to be cleaned with the default parameters --\n')
                 self.clean_data()
             ls_data = self.cleaned_data
         elif type_data == 'tokenized':
             if self.tokenized_data == []:
-                print('\n -- Data hasn\'t been tokenized, to lemmatize the data is going to be tokenized --\n')
+                print('\n -- Data hasn\'t been tokenized, to apply lest to data is going to be tokenized --\n')
                 self.tokenize_data()
             ls_data = self.tokenized_data
         for element in ls_data:
@@ -163,8 +181,11 @@ class text_processing():
                 synsets.append(pair[0])
         return synsets
 
-    def apply_lesk_lemmas_data(self, type_data = 'cleaned', all = False):
-        if type_data == 'cleaned':
+    def apply_lesk_lemmas_data(self, type_data = 'cleaned', all = False, data = False):
+        self.lesk_lemmatized_data = []
+        if data:
+            ls_data = data
+        elif type_data == 'cleaned':
             if self.cleaned_data == []:
                 print('\n -- Data hasn\'t been cleaned, to lesk lemmatize the data is going to be cleaned with the default parameters --\n')
                 self.clean_data()
@@ -193,8 +214,11 @@ class text_processing():
                 synsets.append(pair[0])
         return synsets
 
-    def name_entities_nltk(self, type_data = 'cleaned'):
-        if type_data == 'cleaned':
+    def name_entities_nltk(self, type_data = 'cleaned', data = False):
+        self.name_entities_nltk_data = []
+        if data:
+            ls_data = data
+        elif type_data == 'cleaned':
             if self.cleaned_data == []:
                 print('\n -- Data hasn\'t been cleaned, to get named entitites the data is going to be cleaned with the default parameters --\n')
                 self.clean_data()
@@ -259,15 +283,20 @@ class text_processing():
         return p[0]
 
     @staticmethod
-    def get_most_common_lemma(self,pair):
+    def get_most_common_lemma(self,pair, lemma = False):
         try:
             synsets = wn.synsets(pair[0], self.match[pair[1][0].lower()])
             if synsets != []:
+                if lemma:
+                    return Counter([j for i in synsets for j in i.lemmas()]).most_common(1)[0][0]
                 return Counter([j for i in synsets for j in i.lemmas()]).most_common(1)[0][0].name()
             else:
+                if lemma:
+                    return Counter([j for i in wn.synsets(pair[0]) for j in i.lemmas()]).most_common(1)[0][0]
                 return Counter([j for i in wn.synsets(pair[0]) for j in i.lemmas()]).most_common(1)[0][0].name()
         except:
-            return pair[0]
+            if not lemma:
+                return pair[0]
 
     @staticmethod
     def filter_pos(self, pair):
