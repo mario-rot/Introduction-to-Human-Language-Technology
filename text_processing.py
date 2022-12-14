@@ -4,9 +4,9 @@ import collections
 import nltk
 from nltk.metrics import jaccard_distance
 from nltk.corpus.reader.wordnet import VERB, NOUN, ADJ, ADV
-from nltk.stem import WordNetLemmatizer
 import pandas as pd
 import numpy as np
+import math
 from tqdm import tqdm
 import time
 import matplotlib.pyplot as plt
@@ -14,6 +14,10 @@ from nltk.corpus import wordnet as wn
 from collections import Counter
 import spacy
 nlp = spacy.load("en_core_web_sm")
+
+from nltk.corpus import wordnet_ic
+brown_ic = wordnet_ic.ic('ic-brown.dat')
+# nltk.download('wordnet_ic')
 
 # from nltk.text import Text
 # from nltk.corpus import gutenberg
@@ -307,17 +311,42 @@ class text_processing():
 class compute_metrics():
     def __init__(self,
              data: List = False,
-             metrics: List = False
+             metrics: List = False,
+             kargs: Dict = False,
+             verbose: bool = False
              ):
         self.data = np.array(data, dtype = object).T
         self.metrics = metrics
-        self.methods = {'jaccard': self.jaccard}
+        self.kargs = kargs if kargs else {}
+        self.verbose = verbose
+        self.methods = {'jaccard': self.jaccard,
+                        'synset_similarity':self.synset_similarity,
+                        'norm_length_diff': self.normalized_length_difference, 
+                        'cosine': self.cosine_similarity, 
+                        'unigram': self.unigram_similarity,
+                        'bigram': self.bigram_similarity,
+                        'trigram': self.trigram_similarity}
+        self.pos_map = {'N': NOUN,
+                        'V':VERB,
+                        'J':ADJ,
+                        'R':ADV}
+        self.v_pos = {'n', 'v'}
+        self.maxi = {'wup':1, 'path':1, 'lin':1, 'lch':3}
+        self.similarities = {'wup':{},
+                             'path':{},
+                             'lch':{},
+                             'lin':{}}
         
-    def do(self):
+    def do(self, save = False):
         results = []
-        for met in self.metrics:
-            results.append(self.methods[met]())
-        return results
+        for num,met in enumerate(self.metrics):
+            if isinstance(self.kargs, list):
+                results.append(self.methods[met](**self.kargs[num]))
+            else:
+                results.append(self.methods[met](**self.kargs))
+        if save:
+            np.save(save, results)
+        return np.array(results)
     
     def jaccard(self,data=False):
         j_data = self.data if not data else data
@@ -326,6 +355,173 @@ class compute_metrics():
             result.append(jaccard_distance(set(row[0]),
                                            set(row[1]))*10)
         return result
+
+    def normalized_length_difference(self, data = False):
+        j_data = self.data if not data else data
+        result = []
+        for n,row in enumerate(j_data):
+            result.append(self.normalized_length_difference_sentece(row[0],row[1]))
+        return result
+
+    def normalized_length_difference_sentece(self,sentece1, sentece2):
+        return abs(len(sentece1)-len(sentece2)) / max(len(sentece1), len(sentece2))
+
+    def synset_similarity(self,method, data = False, tag = False):
+        j_data = self.data if not data else data
+        result = []
+        for n,row in enumerate(j_data):
+            if self.verbose:
+                if n%50 == 0:
+                    print('Pairs analyzed: ', n)
+            result.append(self.similarity_sentence(method,row[0],row[1], tag))
+        return result
+
+    def similarity_sentence(self, method,lemmas1, lemmas2, tag = False):
+        if tag:
+            lemmas1 = nltk.pos_tag(lemmas1)
+            lemmas2 = nltk.pos_tag(lemmas2)
+        mean1 = sum(max([self.similarity_word(method,l1,l2, tag) for l2 in lemmas2]) for l1 in lemmas1)/len(lemmas1)
+        mean2 = sum(max([self.similarity_word(method,l2,l1, tag) for l1 in lemmas1]) for l2 in lemmas2)/len(lemmas2)
+        if mean1 != 0 and mean2 != 0:
+            return (2*mean1*mean2)/(mean1+mean2)
+        return 0
+        
+    def similarity_word(self,method,lemma1,lemma2,tag = False):
+
+        if lemma1 == lemma2:
+            return self.maxi[method]
+
+        if method in self.similarities:
+            if (lemma1,lemma2) in self.similarities[method]:
+                return self.similarities[method][(lemma1,lemma2)]
+
+        synsets1 = self.get_synsets(lemma1, tag)
+        synsets2 = self.get_synsets(lemma2, tag)
+        
+        if method == 'path':
+            similarities_t = [syn1.path_similarity(syn2) for syn1 in synsets1 for syn2 in synsets2]
+        elif method == 'wup':
+            similarities_t = [syn1.wup_similarity(syn2) for syn1 in synsets1 for syn2 in synsets2]
+        elif method == 'lch':
+            similarities_t = [syn1.lch_similarity(syn2) if syn1.pos() == syn2.pos() else 0 for syn1 in synsets1 for syn2 in synsets2]
+        elif method == 'lin':
+            similarities_t = [syn1.lin_similarity(syn2, brown_ic) if syn1.pos() == syn2.pos() and syn2.pos() in self.v_pos else 0 for syn1 in synsets1 for syn2 in synsets2]
+            
+        if similarities_t != []:
+            self.similarities[method][(lemma1,lemma2)] = max(similarities_t)
+            return self.similarities[method][(lemma1,lemma2)]
+        return 0
+
+    def cosine_similarity(self, data = False):
+        j_data = self.data if not data else data
+        result = []
+        for row in j_data:
+            result.append(self.cosine_similarity_sentence(row[0],row[1]))
+        return result
+
+    def cosine_similarity_sentence(self,sentence1, sentence2):
+        sim = 0
+        all_words = set(sentence1).union(set(sentence2))
+        s1vec = []
+        s2vec = []
+        for word in all_words:
+            if word in sentence1:
+                s1vec.append(1)
+            else:
+                s1vec.append(0)
+            if word in sentence2:
+                s2vec.append(1)
+            else:
+                s2vec.append(0)
+        sim = np.dot(np.array(s1vec), np.array(s2vec)) / (math.sqrt(sum(s1vec)*sum(s2vec)))
+        return sim
+
+    def unigram_similarity(self, data = False, remove_duplicates = False):
+        j_data = self.data if not data else data
+        result = []
+        for row in j_data:
+            result.append(self.unigram_similarity_sentence(row[0],row[1], remove_duplicates))
+        return result
+
+    def unigram_similarity_sentence(self, sentence1, sentence2, remove_duplicates = False):
+        if remove_duplicates:
+            sentence1 = list(set(sentence1))
+            sentence2 = list(set(sentence2))
+        total_words = len(sentence1) + len(sentence2)
+        used_words = []
+        count = 0
+        for word in sentence1:
+            if word in sentence2 and word not in used_words:
+                count += sentence1.count(word)
+                count += sentence2.count(word)
+                used_words.append(word)
+
+        sim = count / total_words
+        return sim
+
+    def bigram_similarity(self, data = False, remove_duplicates = False):
+        j_data = self.data if not data else data
+        result = []
+        for row in j_data:
+            result.append(self.bigram_similarity_sentence(row[0],row[1], remove_duplicates))
+        return result
+
+    def bigram_similarity_sentence(self, sentence1, sentence2, remove_duplicates = False):
+        bigrams1 = list(nltk.bigrams(sentence1))
+        bigrams2 = list(nltk.bigrams(sentence2))
+        if remove_duplicates:
+            bigrams1 = list(set(bigrams1))
+            bigrams2 = list(set(bigrams2))
+        total_bigrams = len(bigrams1) + len(bigrams2)
+        used_bigrams = []
+        count = 0
+        for bigram in bigrams1:
+            if bigram in bigrams2 and bigram not in used_bigrams:
+                count += bigrams1.count(bigram)
+                count += bigrams2.count(bigram)
+            used_bigrams.append(bigram)
+        if total_bigrams == 0:
+            return 0
+        else:
+            sim = count / total_bigrams
+            return sim
+
+    def trigram_similarity(self, data = False, remove_duplicates = False):
+        j_data = self.data if not data else data
+        result = []
+        for row in j_data:
+            result.append(self.trigram_similarity_sentence(row[0],row[1], remove_duplicates))
+        return result
+
+    def trigram_similarity_sentence(self, sentence1, sentence2, remove_duplicates = False):
+        trigrams1 = list(nltk.trigrams(sentence1))
+        trigrams2 = list(nltk.trigrams(sentence2))
+        if remove_duplicates:
+            trigrams1 = list(set(trigrams1))
+            trigrams2 = list(set(trigrams2))
+        total_trigrams = len(trigrams1) + len(trigrams2)
+        used_trigrams = []
+        count = 0
+        for trigram in trigrams1:
+            if trigram in trigrams2 and trigram not in used_trigrams:
+                count += trigrams1.count(trigram)
+                count += trigrams2.count(trigram)
+            used_trigrams.append(trigram)
+        if total_trigrams == 0:
+            return 0
+        else:
+            sim = count / total_trigrams
+            return sim
+    
+    def get_synsets(self,lemma,tag):
+        if not tag:
+            synsets = wn.synsets(lemma)
+        else:
+            if lemma[1][0] in list(self.pos_map.keys()):
+                synsets = wn.synsets(lemma[0], self.pos_map[lemma[1][0]])
+            else:
+                synsets = wn.synsets(lemma[0])
+        return synsets
 
 class train_tags():
     def __init__(self,
