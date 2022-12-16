@@ -324,6 +324,7 @@ class compute_metrics():
                         'norm_length_diff': self.normalized_length_difference, 
                         'cosine': self.cosine_similarity, 
                         'unigram': self.unigram_similarity,
+                        'unigram_imp': self.unigram_similarity_imp,
                         'bigram': self.bigram_similarity,
                         'trigram': self.trigram_similarity}
         self.pos_map = {'N': NOUN,
@@ -522,6 +523,57 @@ class compute_metrics():
             else:
                 synsets = wn.synsets(lemma[0])
         return synsets
+
+    def get_idf(self, sentences):
+        counterDict = {}
+        total_words = 0
+        for sentence in sentences:
+            for word in sentence:
+                if word in counterDict.keys():
+                    counterDict[word] += 1
+                else:
+                    counterDict[word] = 1
+                total_words += 1
+        
+        idf = {}
+        for word in counterDict.keys():
+            idf[word] = math.log(float(len(sentences)) / float(counterDict[word])) 
+        return idf
+
+    def unigram_similarity_imp(self, corpus, data = False, remove_duplicates = False):
+        j_data = self.data if not data else data
+        idf = self.get_idf(corpus)
+        result = []
+        for row in j_data:
+            result.append(self.unigram_similarity_imp_sentence(row[0],row[1], remove_duplicates,idf))
+        return result
+
+    def unigram_similarity_imp_sentence(self, sentence1, sentence2, remove_duplicates, idf):
+      if remove_duplicates:
+        sentence1 = list(set(sentence1))
+        sentence2 = list(set(sentence2))
+
+      total_words = len(sentence1) + len(sentence2)
+      used_words = []
+      count = 0
+      importance_vals = []
+      for word in sentence1:
+        if word in sentence2 and word not in used_words:
+            tf1 = float(sentence1.count(word)) / len(sentence1)
+            tf2 = float(sentence2.count(word)) / len(sentence2)
+            importance1 = tf1 * idf[word]
+            importance2 = tf2 * idf[word]
+            importance_vals.append(importance1)
+            importance_vals.append(importance2)
+            count += (sentence1.count(word) * importance1)
+            count += (sentence2.count(word) * importance2)
+        used_words.append(word)
+
+      if importance_vals == []:
+        importance_vals = [1]
+      max_importance = max(importance_vals)
+      sim = (count / max_importance) / total_words
+      return sim
 
 class train_tags():
     def __init__(self,
